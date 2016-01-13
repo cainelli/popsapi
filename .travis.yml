@@ -1,0 +1,17 @@
+sudo: required
+language: python
+python:
+  - "2.6"
+  - "2.7"
+install: "pip install -r requirements.txt"
+services:
+  - docker
+env:
+  DOCKER_COMPOSE_VERSION: 1.4.2
+before_install:
+  - sudo rm /usr/local/bin/docker-compose
+  - sudo curl -L https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-`uname -s`-`uname -m` > /usr/local/bin/docker-compose
+  - chmod +x /usr/local/bin/docker-compose
+
+script:
+  - nosetests popsapi/tests/ 
