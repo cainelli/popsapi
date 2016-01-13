@@ -1,0 +1,221 @@
+#!/usr/bin/python
+import requests, os, sys, json, re, time, socket, yaml
+from datetime import datetime
+
+HEADERS = {
+  'Content-Type' : 'application/json'
+}
+
+def auto_config():
+  """
+  Description:
+    Autoconfiguration for default postfix instalations.
+
+  TODO:
+    - Load diffent postfix instances.
+  """
+  print 'loading configuration...'
+
+  config_file = '/opt/popsapi/cfg/agent.yaml'
+
+# load config from yaml file
+  if ( os.path.exists(config_file) ):
+    with open(config_file) as f:
+      cfg = yaml.safe_load(f)
+      return cfg
+
+  cfg = {}
+  try:
+    cfg['api_url'] = 'http://localhost/v1'
+    #cfg['server'] = socket.getfqdn()
+    cfg['server'] = 'mta-in.mailserver.com'
+    cfg['environment'] = 'hosted'
+    cfg['queues'] = ['active', 'hold', 'deferred', 'bounce']
+
+    # load commands
+    cfg['postconf'] = os.popen('which postconf').read().rstrip()
+    cfg['postqueue'] = os.popen('which postqueue').read().rstrip()
+    cfg['postsuper'] = os.popen('which postsuper').read().rstrip()
+    cfg['postcat'] = os.popen('which postcat').read().rstrip()
+
+    cfg['queue_directory'] = os.popen('%s queue_directory' % cfg['postconf']).read().rstrip().split(' = ')[1]
+    # load instances
+    # default instance
+    #default_instance = os.popen('%s config_directory' %
+    #  cfg['postconf']).read().rstrip().split(' = ')[1]
+
+    #cfg['instance'].append({
+    #  default_instance: {
+    
+    #  }
+    #})
+
+
+    with open(config_file, 'wb') as f:
+      f.write(yaml.dump(cfg))
+      f.close()
+      return cfg
+
+  except Exception, e:
+    print 'something went wrong trying to auto configure.(%s)' % e
+    sys.exit(1)
+
+
+cfg = auto_config()
+
+class Task(object):
+  def __init__(self):
+    self.task_url = cfg['api_url'] + '/task/' + cfg['environment']
+
+    filters = '?server=%s&status=pending' % cfg['server']
+    res = requests.get(self.task_url + filters)
+
+    print res
+    self.data = json.loads(res.text)
+
+  def queue_action(self, action, destination):
+    """
+    Description:
+      take postfix action in messages for an account or 'ALL' of them in queue.
+
+    Args:
+      action (string): purge|hold|release|requeue.
+      destination (string): target email address or 'ALL' for everyone.
+    """
+
+    actions = {
+      'purge' : '-d',
+      'hold' : '-h',
+      'release' : '-H',
+      'requeue' : '-r'
+    }
+
+    print 'action: %s: %s' % (action, destination)
+    #postqueue -p | egrep "televendas@yamamura.com.br" | awk '{ print $1 }' | postsuper -d-
+    if destination == 'ALL':
+      cmd = '%s %s ALL' % (cfg['postsuper'], actions[action])
+    else:
+      cmd = '%s -p | egrep "%s" | awk \'{ print $1 }\' | %s %s -' % (
+        cfg['postqueue'], destination, cfg['postsuper'], actions[action]
+      )
+    print cmd
+    os.system(cmd)
+
+
+  def blockusr(self, platform, destination):
+    print 'blocking %s: %s' % destination, platform
+
+  def get_message(self, destination):
+    print 'getting message from %s' % destination
+    queueid = os.popen("%s -p | grep %s | tail -n1 | awk '{print $1}'" % (
+      cfg['postqueue'],destination)).read().rstrip()
+    #/usr/sbin/postcat -q 86F9BCC900
+    message = os.popen("%s -qeh %s" % (cfg['postcat'], queueid)).read().rstrip()
+
+    return message
+
+  def run(self):
+    for task in (self.data):
+      try:
+# task['action'] = 'getmessage'
+#        task['destination'] = 'vendas.rg@multfer.com.br'
+        print 'executing task: %s' % json.dumps(task, indent=2)
+        if task['action'] in (['purge','hold','release','requeue']):
+          self.queue_action(task['action'], task['destination'])
+        elif task['action'] == 'getmessage':
+          message = self.get_message(task['destination'])
+          self.update_task(task['taskid'], 'response', str(message))
+        self.update_task(task['taskid'], 'status', 'completed')
+
+      except Exception, e:
+        self.update_task(task['taskid'], 'status', 'error')
+        self.update_task(task['taskid'], 'response', 'failed to execute command.')
+
+  def update_task(self, taskid, field, value):
+    print 'updating %s { %s : %s }' % ( taskid, field, value)
+    request_update = {
+      'taskid' : str(taskid),
+      field : value
+    }
+
+    print request_update
+    response = requests.put(self.task_url, headers=HEADERS, data=json.dumps(request_update))
+    print response.status_code
+    print response.text
+
+
+
+class Event(object):
+  def __init__(self):
+    self.queue_url = cfg['api_url'] + '/queue/' + cfg['environment']
+  #   pass
+  def get_event(self):
+
+    cfg = auto_config()
+
+    print 'getting data...'
+    for postfix in cfg['instance']:
+      for name, instance in postfix.iteritems():
+        # load top senders
+        # /usr/sbin/postqueue -c /etc/postfix -p
+        cmd = '%s -c %s -p' % (cfg['postqueue'], name)
+        output = os.popen('%s' % cmd).read()
+        topsenders = self.load_top_senders(output)
+
+        queues = {}
+        for queue in cfg['queues']:
+          msgs = 0
+          for root, dirs, files in os.walk('%s/%s' % (instance['queue_directory'] , queue)):
+            msgs += len(files)
+          queues[queue] = msgs
+
+      return {
+        'server' : cfg['server'],
+        'queue' : queues,
+        'topsenders' : topsenders
+      }
+
+  def post_event(self, data):
+    print 'posting data: %s' % json.dumps(data, indent=2)
+
+    response = requests.post(self.queue_url, headers=HEADERS, data=json.dumps(data))
+    print response.status_code
+    print response.text
+
+
+  def load_top_senders(self, queue):
+    buffer_tops = {}
+    data = []
+    for entry in queue.split('\n'):
+      if re.findall(r"^[0-9A-Z]", entry):
+        sender = entry.split(' ')[-1]
+        try:
+          buffer_tops[sender] += 1
+        except:
+          buffer_tops[sender] = 1
+
+    for sender, msg_count in sorted(buffer_tops.iteritems(),key=lambda (k,v): (v,k), reverse=True)[:3]:
+      data.append({'email': sender,'quantity' : msg_count})
+
+    return data
+
+if __name__ == '__main__':
+  print 'getting config'
+  print yaml.dump(cfg)
+
+  # try:
+  #   event = Event()
+  #   event_data = event.get_event()
+  #   event.post_event(event_data)
+  # except Exception, e:
+  #  # DEBUG
+  #  #print e
+  #  print 'error posting event'
+
+  # try:
+  #   task = Task()
+  #   task.run()
+  # except Exception, e:
+  #   #DEBUG
+  #   #print e
+  #   print 'error executing task.'

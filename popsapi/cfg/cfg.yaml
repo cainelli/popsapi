@@ -1,0 +1,38 @@
+mongo:
+  user: popsapi
+  pass: popsapi
+  host: mongodb
+  port: 27017
+  name: popsapidb
+  events:
+    expires: 500
+  tasks:
+    expires: 500
+slack:
+  actions: ['block', 'purge', 'hold', 'release', 'getmessage', 'requeue']
+  status: ['pending', 'error', 'completed']
+logger:
+  version: 1
+  disable_existing_loggers: false
+  formatters:
+    simple:
+      format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  handlers:
+    console:
+      class: logging.StreamHandler
+      formatter: simple
+      stream: ext://sys.stdout
+    prod_file_handler:
+      class: logging.handlers.RotatingFileHandler
+      formatter: simple
+      filename: /opt/popsapi/log/popsapi.log
+      maxBytes: 104857600 # 100MB
+      backupCount: 1
+      encoding: utf8
+  loggers:
+    __main__:
+      level: DEBUG
+      handlers: [console]
+  root:
+    level: DEBUG
+    handlers: [console]

@@ -1,0 +1,18 @@
+mongodb:
+  build: ./mongodb
+  ports: 
+    - "27017:27017"
+popsapi:  
+  #net: host
+  #pid: "host"
+  build: .
+  ports:
+    - "80:80"
+  links:
+    - mongodb
+  volumes:
+    - ./popsapi/:/opt/popsapi
+  environment:
+    - POPS_CONFIG_FILE=/opt/popsapi/cfg/cfg.yaml
+    - POPS_VERSION=v1
+    - PYTHONPATH=/opt

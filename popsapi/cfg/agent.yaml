@@ -1,0 +1,9 @@
+api_url: http://localhost/v1
+environment: hosted
+postcat: /usr/sbin/postcat
+postconf: /usr/sbin/postconf
+postqueue: /usr/sbin/postqueue
+postsuper: /usr/sbin/postsuper
+queue_directory: /var/spool/postfix
+queues: [active, hold, deferred, bounce]
+server: mta-in.mailserver.com
