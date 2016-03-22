@@ -25,7 +25,7 @@ logger:
     prod_file_handler:
       class: logging.handlers.RotatingFileHandler
       formatter: simple
-      filename: /opt/popsapi/log/popsapi.log
+      filename: /var/log/popsapi.log
       maxBytes: 104857600 # 100MB
       backupCount: 1
       encoding: utf8
